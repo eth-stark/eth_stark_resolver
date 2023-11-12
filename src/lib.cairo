@@ -160,10 +160,10 @@ mod EthStarkResolver {
             }
         }
 
-        fn addr_to_dec_chars(self: @ContractState, addr: ContractAddress) -> Array<u8> {
+        fn addr_to_bytes(self: @ContractState, addr: ContractAddress) -> Array<u8> {
             let felted: felt252 = addr.into();
-            let ten: NonZero<u256> = 10_u256.try_into().unwrap();
-            let to_add = self.div_rec(felted.into(), ten);
+            let byte_size: NonZero<u256> = 256_u256.try_into().unwrap();
+            let to_add = self.div_rec(felted.into(), byte_size);
             to_add
         }
 
@@ -174,8 +174,52 @@ mod EthStarkResolver {
             } else {
                 self.div_rec(value, divider)
             };
+            output.append(digit.try_into().unwrap());
+            output
+        }
+
+        fn addr_to_dec_chars(self: @ContractState, addr: ContractAddress) -> Array<u8> {
+            let felted: felt252 = addr.into();
+            let ten: NonZero<u256> = 10_u256.try_into().unwrap();
+            let to_add = self.ascii_div_rec(felted.into(), ten);
+            to_add
+        }
+
+        fn ascii_div_rec(self: @ContractState, value: u256, divider: NonZero<u256>) -> Array<u8> {
+            let (value, digit) = DivRem::div_rem(value, divider);
+            let mut output = if value == 0 {
+                Default::default()
+            } else {
+                self.ascii_div_rec(value, divider)
+            };
             output.append(48 + digit.try_into().unwrap());
             output
+        }
+
+        fn concat_hashes(self: @ContractState, hashes: (u256, u256, u256, u256)) -> Array<u8> {
+            let mut output = Default::default();
+            let (a, b, c, d) = hashes;
+            let byte_size: NonZero<u256> = 256_u256.try_into().unwrap();
+            self.append_div_rec(ref output, a, byte_size, 32);
+            self.append_div_rec(ref output, b, byte_size, 32);
+            self.append_div_rec(ref output, c, byte_size, 32);
+            self.append_div_rec(ref output, d, byte_size, 32);
+            output
+        }
+
+        fn append_div_rec(
+            self: @ContractState,
+            ref output: Array<u8>,
+            value: u256,
+            divider: NonZero<u256>,
+            i: felt252
+        ) {
+            if i == 0 {
+                return;
+            }
+            let (value, digit) = DivRem::div_rem(value, divider);
+            self.append_div_rec(ref output, value, divider, i - 1);
+            output.append(digit.try_into().unwrap());
         }
     }
 }
