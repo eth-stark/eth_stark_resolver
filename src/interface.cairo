@@ -1,5 +1,6 @@
 use starknet::{ContractAddress, ClassHash};
 use starknet::secp256k1::Signature;
+use starknet::EthAddress;
 
 #[starknet::interface]
 trait IEnsMigrator<TContractState> {
@@ -8,7 +9,9 @@ trait IEnsMigrator<TContractState> {
         unicode_domain: Span<(felt252, felt252)>,
         msg_hash: u256,
         signature: Signature,
-        herodotus_proof : felt252
+        block_number: u256,
+        slot: u256,
+        owner_address: EthAddress,
     );
 
     fn set_resolving(

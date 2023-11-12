@@ -2,9 +2,17 @@ mod interface;
 #[cfg(test)]
 mod tests;
 
+#[starknet::interface]
+trait IFactsRegistry<TContractState> {
+    fn get_slot_value(
+        self: @TContractState, account: felt252, block: u256, slot: u256
+    ) -> Option<u256>;
+}
+
 
 #[starknet::contract]
 mod EthStarkResolver {
+    use core::traits::Into;
     use core::array::ArrayTrait;
     use core::array::SpanTrait;
     use option::OptionTrait;
@@ -14,7 +22,16 @@ mod EthStarkResolver {
     use storage_read::{main::storage_read_component, interface::IStorageRead};
     use naming::interface::resolver::{IResolver, IResolverDispatcher, IResolverDispatcherTrait};
     use eth_stark_resolver::interface::IEnsMigrator;
-    use starknet::secp256k1::Signature;
+    use starknet::{
+        EthAddress,
+        secp256_trait::{
+            Secp256Trait, Secp256PointTrait, recover_public_key, is_signature_entry_valid, Signature
+        },
+        secp256k1::{Secp256k1Point, Secp256k1PointImpl}, SyscallResult, SyscallResultTrait
+    };
+    use keccak::keccak_u256s_be_inputs;
+    use starknet::eth_signature::verify_eth_signature;
+    use super::{IFactsRegistryDispatcherTrait, IFactsRegistryDispatcher};
 
     #[event]
     #[derive(Drop, starknet::Event)]
@@ -35,6 +52,10 @@ mod EthStarkResolver {
         #[substorage(v0)]
         storage_read: storage_read_component::Storage,
     }
+
+    const HERODOTUS_FACTS_REGISTRY: felt252 =
+        0x07c88f02f0757b25547af4d946445f92dbe3416116d46d7b2bd88bcfad65a06f;
+    const ENS_MIDDLEWARE_ADDRESS: felt252 = 0xB6920Bc97984b454A2A76fE1Be5e099f461Ed9c8;
 
     component!(path: storage_read_component, storage: storage_read, event: StorageReadEvent);
 
@@ -58,16 +79,33 @@ mod EthStarkResolver {
             unicode_domain: Span<(felt252, felt252)>,
             msg_hash: u256,
             signature: Signature,
-            herodotus_proof: felt252
+            block_number: u256,
+            slot: u256,
+            owner_address: EthAddress,
         ) { // todo:
-        // assert msg_hash is hash('redeem .eth domain', eth_domain, caller_address)
-        // verify that signature corresponds to the hash
-        // extract ethereum address from signature (using recover_public_key and derivating address?)
-        // validate herodotus proof
-        //  onverts domain from unicode_domain
-        // write caller_address as controller of domain
-        // emits an event saying that caller_address claimed domain
+            // verify that signature corresponds to the hash
+
+            // step1. To make sure owner_address is the owner of person who calling the function by verifying signature
+            verify_eth_signature(msg_hash, signature, owner_address);
+
+            // step2. Retrieve ENS owner address from Herodotous fact registry
+            let fact_registry_dispatcher = IFactsRegistryDispatcher {
+                contract_address: HERODOTUS_FACTS_REGISTRY.try_into().unwrap()
+            };
+            let ens_owner: EthAddress = fact_registry_dispatcher
+                .get_slot_value(ENS_MIDDLEWARE_ADDRESS, block_number, slot)
+                .unwrap()
+                .into();
+
+            // step3. Compare ens owner from Herodotous with signature owner
+            // assert msg_hash is hash('redeem .eth domain', eth_domain, caller_address)
+            if ens_owner == owner_address {
+                let domain = unicode_domain.at(0);
+            // write caller_address as controller of domain
+            // emits an event saying that caller_address claimed domain
+            }
         }
+
 
         fn set_resolving(
             ref self: ContractState, domain: Span<felt252>, field: felt252, data: felt252
